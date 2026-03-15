@@ -1462,6 +1462,7 @@ pub async fn prepare_gateway(
     #[cfg(feature = "tailscale")] tailscale_opts: Option<TailscaleOpts>,
     extra_routes: Option<RouteEnhancer>,
     session_event_bus: Option<SessionEventBus>,
+    sandbox_override: Option<Arc<dyn moltis_tools::sandbox::Sandbox>>,
 ) -> anyhow::Result<PreparedGateway> {
     let session_event_bus = session_event_bus.unwrap_or_default();
 
@@ -2381,9 +2382,12 @@ pub async fn prepare_gateway(
         .timezone
         .as_ref()
         .map(|tz| tz.name().to_string());
-    let sandbox_router = Arc::new(moltis_tools::sandbox::SandboxRouter::new(
-        sandbox_config.clone(),
-    ));
+    let sandbox_router = Arc::new(match sandbox_override {
+        Some(backend) => {
+            moltis_tools::sandbox::SandboxRouter::with_backend(sandbox_config.clone(), backend)
+        }
+        None => moltis_tools::sandbox::SandboxRouter::new(sandbox_config.clone()),
+    });
 
     // ── Trusted-network proxy + audit ────────────────────────────────────
     #[cfg(feature = "trusted-network")]
@@ -5045,6 +5049,7 @@ pub async fn prepare_gateway_embedded(
         None,
         extra_routes,
         session_event_bus,
+        None, // sandbox_override — embedded callers use config-driven backend
     )
     .await?;
     // Embedded callers manage their own listener lifecycle, so kick off
@@ -5079,6 +5084,7 @@ pub async fn start_gateway(
         tailscale_opts,
         extra_routes,
         None, // session_event_bus — CLI creates its own
+        None, // sandbox_override — CLI uses config-driven backend
     )
     .await?;
 
